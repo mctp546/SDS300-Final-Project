@@ -1,0 +1,124 @@
+---
+title: "Final Code"
+output: html_document
+date: "2023-05-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(rio)
+library(janitor)
+library(broom)
+library(stargazer)
+```
+
+## Data Downloading and Cleaning
+```{r}
+ptsd_comparison <- import("PTSD_Outcome_Comparisons_Between_Treatment_Arms.csv")
+# git_survey <- import("survey_results_public.csv")
+```
+
+```{r}
+ptsd_comparison <- ptsd_comparison %>% 
+  clean_names()
+```
+
+```{r}
+ptsd_comparison <- ptsd_comparison %>% 
+  mutate(bias_number = ifelse(risk_of_bias_rating_study_level == "High", 3, 2))
+
+ptsd_summary <- ptsd_comparison %>% 
+  group_by(study_class) %>% 
+  summarize(number = n(),
+            mean_effect = mean(effect_size_1_value, na.rm = T))
+```
+
+```{r}
+ptsd_comparison %>%
+  count(effect_size_1_type) %>%
+  ggplot(aes(x = reorder(effect_size_1_type, -n), y = n)) +
+  geom_bar(stat = 'identity') +
+  xlab("effect size 1 type") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+ptsd_cohensd <- ptsd_comparison %>% 
+  filter(effect_size_1_type == "Cohen's d")
+                          
+cohensd_summary <- ptsd_cohensd %>% 
+   group_by(study_class) %>% 
+   summarize(number = n(),
+             mean_effect = mean(effect_size_1_value))
+ 
+```
+
+
+```{r}
+ptsd_cohensd <- ptsd_cohensd %>% 
+  filter(study_class != "Nonpharmacologic cognitive")
+
+ptsd_cohensd <- ptsd_cohensd %>% 
+  mutate(psych = ifelse(study_class == "Psychotherapy", 1, 0)) %>% 
+  mutate(other = ifelse(study_class == "Other mixed", 1, 0)) %>% 
+  mutate(psych_pharm = ifelse(study_class == "Mixed: Psychotherapy & pharmacotherapy", 1, 0)) %>% 
+  mutate(pharm = ifelse(study_class == "Pharmacotherapy", 1, 0)) %>% 
+  mutate(psych_cih = ifelse(study_class == "Mixed: Psychotherapy & CIH", 1, 0)) %>% 
+  mutate(cih = ifelse(study_class == "Complementary and integrative health (CIH)", 1, 0)) %>% 
+  mutate(nonpharm_bio = ifelse(study_class == "Nonpharmacologic biological", 1, 0)) %>% 
+  mutate(collab = ifelse(study_class == "Collaborative care", 1, 0))
+```
+
+```{r}
+mean_effect_data <- ptsd_cohensd %>% 
+  group_by(study_class) %>% 
+  summarize(
+    effect_size_mean = mean(effect_size_1_value),
+    effect_size_median = median(effect_size_1_value),
+    study_number = n()
+  )
+```
+
+
+## ANOVA
+
+```{r}
+one.anova <- aov(effect_size_1_value ~ study_class, data = ptsd_cohensd)
+summary(one.anova)
+```
+
+
+## Linear regression
+```{r}
+num_model <- lm(effect_size_1_value ~ psych + other + psych_pharm + pharm + psych_cih + nonpharm_bio + collab, data = ptsd_cohensd)
+class_model <- lm(effect_size_1_value ~ study_class + total_n_randomized, data = ptsd_cohensd)
+```
+
+```{r}
+summary(num_model)
+```
+
+
+## Images
+
+```{r results='asis'}
+
+stargazer(num_model, type="text", header=FALSE,
+          title="Relationship Between Effect Size and Treatment Type",
+          covariate.labels = c("Psychotherapy", "Other", "Psych Pharm", "Pharmacotherapy", "Psych CIH", "Nonpharm bio", "Collaborative Care"),
+          keep.stat=c("adj.rsq", "n"))
+```
+
+```{r}
+ggplot(ptsd_cohensd, aes(x = effect_size_1_value, y = study_class)) + 
+  geom_boxplot() +
+  labs(title = "Comparison of PTSD Treatment Groups",
+       x = "Effect Size",
+       y = "Treatment Type")
+```
+
+
